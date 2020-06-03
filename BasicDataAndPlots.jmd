@@ -1,0 +1,239 @@
+# Acquiring some data and plotting it
+
+So you want to answer some questions you have about the
+world... Suppose you'd like to see how the population of several
+states has changed over time. We'll rely on CSV files published by the
+Census. The goal of this tutorial will be to simply walk you through
+acquiring the data, processing it into a form where it's easy to
+analyze, and plotting some aspects of the data to help you see what
+happened.
+
+In the companion Discussion we'll talk about why the code looks like
+it does and what other options there are.
+
+## Getting the data
+
+We'll rely on the [Queryverse](https://www.queryverse.org/)
+meta-package which will provide us with ways to reads CSV files and to
+pipe datasets through filtering and mutation operations. To find out
+more you can
+[watch a great introduction](https://youtu.be/OFPNph-WxLM?t=73) by the
+author. And we'll use
+[DataFrames](https://juliadata.github.io/DataFrames.jl/stable/), which
+will let us create in-memory tabular data objects. We will also use
+[Gadfly](http://gadflyjl.org/stable/) which is a plotting package
+particularly oriented towards statistical data analysis plots. We
+won't cover the Queryverse built-in plotting system VegaLite in this
+tutorial, but might provide some separate tutorials.
+
+Let's get started by loading up the required packages, and grabbing
+some data:
+
+
+```julia
+using Queryverse,DataFrames;
+
+cenfile="https://www2.census.gov/programs-surveys/popest/datasets/2010-2019/counties/totals/co-est2019-alldata.csv"
+
+df = DataFrame(load(cenfile));
+display(first(df,5))
+
+```
+
+## Reshaping the data to long form
+
+Of course, the shape of this data is all wrong. There are 164 columns
+each column has information on a different variable in a different
+year! This data format is convenient for people wishing to by-hand
+click some buttons and graph some data in Excel, because it places
+related data items together in the dataset and they can select those
+related items with a mouse. It is, however, horrible for someone
+wishing to **program** a computer to do analysis in bulk.
+
+This is a common data problem. To solve it we will want to reshape the
+data using some
+[DataFrame functions](https://juliadata.github.io/DataFrames.jl/stable/man/reshaping_and_pivoting/). In
+particular `stack` will take a dataset and "stack" it into a long
+form, with one row for each column mentioned. In this case we want all
+the columns except Not the ones that identify the row.
+
+## Let's Stack It
+
+We'll stack the data frame, and then subset to the columns we might
+care about to avoid a lot of extra junk on our screen, and select the
+rows that represent statewide totals (where `STNAME == CTYNAME`), and
+we'll add a `year` column for later use.
+
+```julia
+
+dflong = stack(df,Not([:SUMLEV,:REGION,:DIVISION,:STATE,:COUNTY,:STNAME,:CTYNAME ])) |> @filter(_.STNAME == _.CTYNAME) |> @mutate(year=-1) |> DataFrame;
+
+select!(dflong,[:STNAME,:year,:variable, :value,:DIVISION,:REGION])
+
+
+display(first(dflong,5))
+
+```
+
+Since the table is now "long form" we have one row per county per
+measurement. We can therefore select out just the ones that have
+population measurements. Let's take a look at which measurements those
+are.
+
+```julia
+
+unique(dflong[:,:variable])
+
+```
+
+## Munging the data
+
+
+Clearly POPESTIMATE variables are the ones we want, but the year has
+been encoded into the symbol name because there was one column per
+year... What we want is to split this column into one containing
+POPESTIMATE and one containing the year.
+
+Since we're going to want to edit the variable names in the variable
+column, it's not convenient for them to be symbols. Let's convert them
+to String and in the process, also strip off the year and put it into
+a numerical `year` column.
+
+We notice that the census always put the year pasted on to the end of
+the symbol name (when appropriate). But it's not for every
+symbol. We'll strip off the last 4 characters, and try to convert it
+to an integer using `tryparse`. If `tryparse` fails, it returns
+`nothing` which is a special value meaning nothing... We always want
+an Integer though, so we call `something(...)` which returns the first
+argument that isn't `nothing`, so that when we get nothing, something
+will give us -1 instead which is unambiguously not a real year for
+this dataset. This keeps our column type as Int (and avoids problems
+later).
+
+```julia
+
+display(first(dflong,5))
+dflong2 = DataFrame(dflong |> @mutate(year = something(tryparse(Int,string(_.variable)[end-3:end]),-1), variable=String(_.variable)) |> @mutate(variable = _.year > 0 ? _.variable[1:end-4] : _.variable) )
+display(first(dflong2,5))
+
+```
+
+There are lots of variables, so let's just select out the ones that
+look like POPESTIMATE.
+
+```julia
+display(unique(dflong2.variable) )
+
+pop = dflong2 |> @filter(_.variable == "POPESTIMATE") |>DataFrame
+display(first(pop,5))
+
+```
+
+# Visualizing Aspects of Population Data
+
+
+Now we have a DataFrame called `pop` that we can examine. Let's find
+out what is going on in the population of these states over
+time. We'll need to make some plots using Gadfly.
+
+```julia
+
+using Gadfly
+
+set_default_plot_size(20cm,10cm);
+
+display(plot(pop,x=:year,y=:value,Geom.line,color=:STNAME))
+display(plot(pop,x=:value,Geom.density(bandwidth=1e6)))
+
+```
+
+Normally Jupyter only displays the last thing in a cell, so we
+explicitly display each graph.
+
+These plots get us some basic information, but they have all sorts of
+problems. For example the color key for the 50 states takes up more of
+the plot than the plot does. And there are too many lines to really
+tell what's going on. And the density plot for population is pretty
+interesting, but it has no labels and the units are not very
+convenient. Let's fix the density plot first.
+
+```julia
+
+display(plot(DataFrame(pop |> @mutate(stpop=_.value/1e6)),
+	x=:stpop,Geom.density(bandwidth=1),
+	Guide.title("Distribution of State Populations"),
+	Guide.xlabel("Population (Millions of People)")))
+
+
+``` 
+
+Of course, this is the density for all observations across all the
+years. Let's look at how the distribution of populations changed
+between say 2015 and 2019:
+
+```julia
+set_default_plot_size(20cm,10cm)
+display(hstack(plot(DataFrame(pop |> @mutate(stpop=_.value/1e6) |> @filter(_.year == 2015)),
+x=:stpop,Geom.density(bandwidth=1),
+Guide.title("Distribution of State Populations 2015"),
+Guide.xlabel("Population (Millions of People)")),
+plot(DataFrame(pop |> @mutate(stpop=_.value/1e6) |> @filter(_.year == 2019)),
+x=:stpop,Geom.density(bandwidth=1),
+Guide.title("Distribution of State Populations 2019"),
+Guide.xlabel("Population (Millions of People)"))))	
+
+```
+
+We can see that the distribution is relatively stable as might be
+expected since tens of millions of people don't tend to all move
+between states every few years. Let's select all the states with more
+than 10 Million people, and look at how they trended in time, and
+compare to states with less than 2 Million people.
+
+```julia
+bigstates = unique(pop[pop.value .> 10e6,"STNAME"])
+
+bigdata = DataFrame(pop |> @filter(_.STNAME in bigstates) |> @mutate(stpop=_.value/1e6))
+bigplot = plot(bigdata, x=:year,y=:stpop, Geom.line,color=:STNAME,Geom.point,Guide.title("Population of Large States"))
+
+smallstates = unique(pop[pop.value .< 2e6,"STNAME"])
+
+smalldata = DataFrame(pop |> @filter(_.STNAME in smallstates) |> @mutate(stpop=_.value/1e6))
+
+smallplot = plot(smalldata, x=:year,y=:stpop,Geom.line,color=:STNAME,Geom.point,Guide.title("Population of Small States"))
+
+set_default_plot_size(9inch,4inch)
+hstack(bigplot,smallplot)
+
+```
+
+So far so good. We notice that Idaho has been growing nonlinearly
+through time. Let's fit a quadratic to its growth curve and then we'll
+call it a day.
+
+```julia
+using GLM
+iddata = smalldata |> @filter(_.STNAME == "Idaho") | DataFrame
+idgrowth = lm(@formula(stpop ~ (year-2015)+(year-2015)^2),iddata)
+
+display(coef(idgrowth))
+
+preds = DataFrame(predict(idgrowth,DataFrame(year=[2020,2021]),interval=:prediction))
+preds.State = ["Idaho","Idaho"]
+preds.year = [2020,2021]
+preds
+
+
+```
+
+Who knows how many people will be in Idaho in 2021, perhaps COVID-19
+will cause an even bigger influx than the recent trend as people leave
+CA. But in any case, now we know what we'd expect if the trend
+continued as in the past. Extrapolating using a quadratic can be
+problematic, but this isn't too far outside the range of plausible. If
+we want to do more modeling, we should really learn some Bayesian
+methods 😉.
+
+
+That's it for now. If you have some interest in what we did, and why
+we did it, you can read the Discussion document.
