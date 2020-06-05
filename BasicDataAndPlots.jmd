@@ -1,5 +1,10 @@
 # Acquiring some data and plotting it
 
+## A simple data analysis tutorial using Julia
+### By: Daniel Lakeland
+### Lakeland Applied Sciences LLC
+
+
 So you want to answer some questions you have about the
 world... Suppose you'd like to see how the population of several
 states has changed over time. We'll rely on CSV files published by the
