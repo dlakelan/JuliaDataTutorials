@@ -1,0 +1,31 @@
+# Prerequisites
+
+This document simply lets you add packages that are appropriate for
+data analysis and visualizations, and then precompile all of them so
+that you don't have long load times later when you want to use the
+packages. This script could take **quite a long time** and requires
+you to have an internet connection to download the packages.
+
+```julia
+
+using Pkg;
+Pkg.add("IJulia")
+Pkg.add("Queryverse")
+Pkg.add("DataFrames")
+Pkg.add("HTTP")
+Pkg.add("Plots")
+Pkg.add("Gadfly")
+Pkg.add("Distributions")
+Pkg.add("Random")
+Pkg.add("GLM")
+Pkg.add("Optim")
+Pkg.add("BlackBoxOptim")
+Pkg.add("Turing") # currently has bug
+Pkg.add("Stan")
+Pkg.add("Statistics")
+Pkg.add("SQLite")
+Pkg.add("Weave")
+Pkg.update()
+Pkg.precompile()
+
+```

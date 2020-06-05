@@ -1,0 +1,325 @@
+# Discussion of "Acquiring some data and plotting it"
+
+Although the Tutorials are designed to be very straightforward, so you
+can see what we're doing, and you learn by doing... the Discussion is
+all about **putting what we did in a broader perspective** and **showing you
+possible alternatives**, or where things could go wrong. Those are all
+just distractions during the initial learning phase, but are important
+perspectives to have once you're past the initial comfort zone, so you
+can make better decisions about how to do things. **In the tutorial we
+try to select one good way to accomplish the task and stick to it.** In
+the discussion we might show you 3 or 4 other ways.
+
+First off, we needed to get the CSV file from the Census. The first
+thing that will generally go wrong is that **you don't have the
+slightest clue where to look for the dang file**. When I searched for
+["census population csv"](https://www.startpage.com/do/dsearch?query=census+population+csv&cat=web&pl=ext-ff&language=english&extVersion=1.3.0)
+on StartPage (an anonymous proxy for Google searches) it led to
+[State Population Totals](https://www.census.gov/data/datasets/time-series/demo/popest/2010s-state-total.html)
+which at the bottom has a link to
+[Datasets](https://www2.census.gov/programs-surveys/popest/datasets/)
+which unhelpfully plops you into a directory tree by decade... so
+selecting 2010-2019 and then counties and then totals led to
+[our final csv file](https://www2.census.gov/programs-surveys/popest/datasets/2010-2019/counties/totals/co-est2019-alldata.csv).
+
+Since we want states, **it might have made more sense to go to the
+"states" directory**, but if you had done that, you'd have found one
+file with just the 2019 data, whereas **the county directory has the
+full time series, and it has summary data for each state**. Such is the
+life of a data analyst.
+
+Once we have a file we want to analyze, we need to get the data into
+Julia to analyze it. There are several issues:
+
+1. Do you want to download the file via http/https and store it
+   locally, or just grab the contents from the web and read it into memory?
+2. Which package to do you use to read it into memory?
+3. How do you handle the data in memory?
+
+
+## Choice of Queryverse for tabular data
+
+
+I think the [Queryverse package set](https://www.queryverse.org/) is well thought out from a
+computational perspective and well maintained by
+[David Anthoff](https://www.david-anthoff.com/). He is committed to
+not making breaking changes to his code as much as possible, and has a
+great [video tutorial](https://www.youtube.com/watch?v=OFPNph-WxLM) on
+using Queryverse. But there are a few other useful packages to know
+about which we will discuss below.
+
+
+## Downloading Files to Disk
+
+If you want to download files to disk, rather than just process them
+in memory, you should know about the
+[HTTP package](https://juliaweb.github.io/HTTP.jl/stable/). Here is an
+example of getting a file from a URL and putting it into a file on
+disk called "co-est2019-alldata.csv" which matches the original name.
+
+```julia
+using HTTP
+
+outfile = open("co-est2019-alldata.csv","w")
+HTTP.get("https://www2.census.gov/programs-surveys/popest/datasets/2010-2019/counties/totals/co-est2019-alldata.csv",response_stream=outfile)
+close(outfile)
+
+```
+
+In this code, we first open our output file for writing, and then hand
+it to HTTP.get() as the `response_stream=` keyword argument. We have
+to be explicit about the HTTP.get because otherwise some other "get"
+function is called. The `HTTP.get` function will stream the response
+to the file for us... we then close the file to ensure it's written
+properly to disk.
+
+if you do this a bunch, you might write a utility function
+specifically to do it all for you.
+
+```julia
+function http_get(url,outfile)
+	out = open(outfile,"w");
+	try
+		HTTP.get(url,response_stream=out)
+	catch err
+		println("there was an error $err while saving $url to file $outfile")
+	end
+	close(out)
+end
+```
+
+Here we
+[introduce a little error handling](https://docs.julialang.org/en/v1/manual/control-flow/#Exception-Handling-1)
+as well. The error handling ensures we are alerted to any problems
+with the network connection or disk io... and that we always close the
+file.
+
+
+## Alternative CSV Handling
+
+If you're looking to read CSV type files, there are a number of
+alternative packages from the Queryverse provided CSVFiles
+one. Queryverse provides packages to handle CSV,
+[Apache Feather](https://arrow.apache.org/docs/python/feather.html),
+Excel, SPSS, Stata, SAS, and Parquet files. They are
+[reasonably fast](https://www.queryverse.org/benchmarks/), with 1M
+rows of 20 columns of mixed data taking 2 seconds or so, the
+interfaces are all uniform among the files, and the whole ecosystem
+works well within itself, and has excellent generic interfaces to
+other packages as well. This makes it hard to recommend alternatives,
+but it is worth mentioning the
+[CSV.jl](https://juliadata.github.io/CSV.jl/stable/) package, which
+can be used to easily read a CSV file into a DataFrame as follows:
+
+```
+
+using CSV;
+
+mydf = CSV.read("myfile.csv")
+
+```
+
+A convenience function `download` in Julia uses external tools like
+curl or wget as available to grab files from urls... but watch out if
+you're running on a machine where those external tools aren't
+available.
+
+```
+help?>  download
+search: download
+
+  download(url::AbstractString, [localfile::AbstractString])
+
+  Download a file from the given url, optionally renaming it to the given
+  local file name. If no filename is given this will download into a
+  randomly-named file in your temp directory. Note that this function
+  relies on the availability of external tools such as curl, wget or fetch
+  to download the file and is provided for convenience. For production use
+  or situations in which more options are needed, please use a package
+  that provides the desired functionality instead.
+
+  Returns the filename of the downloaded file.
+```
+
+So we could do:
+
+```julia
+
+using CSV
+
+mydf = CSV.read(download("https://www2.census.gov/programs-surveys/popest/datasets/2010-2019/counties/totals/co-est2019-alldata.csv"))
+
+
+```
+
+Note that CSVFiles/Queryverse doesn't seem to have these external
+requirements and will read from a URL with its built-in `load`
+function.
+
+## Queryverse queries, syntactic sugar, and Data Frames
+
+The de-facto standard for in memory tabular data is the
+[DataFrames](https://juliadata.github.io/DataFrames.jl/stable/)
+package. We use it extensively here. When we pipe these through
+Queryverse queries such as `df |> @filter(...)` the Queryverse queries
+work with
+[iterators](https://docs.julialang.org/en/v1/manual/interfaces/) over
+[named tuples](https://docs.julialang.org/en/v1/manual/types/#Named-Tuple-Types-1). Basically
+a named tuple is the same as
+[E.F. Codd's](https://en.wikipedia.org/wiki/Edgar_F._Codd) notion of a
+[Relational Model](https://en.wikipedia.org/wiki/Relational_model) of
+"rows" or "tuples" of data grouped together into a "relation" or
+"table". This makes the interface extremely general purpose. However
+if you want to be able to grab particular values rather than interate
+over the entire table, you'll need to construct a DataFrame to hold
+the relation represented by the Query. At the end of the chain of
+operations if we want a DataFrame we need to pipe into the DataFrame
+constructor.
+
+```
+newdf = mydf |> @filter(...) |> @mutate(...) |> DataFrame
+
+## or what's the same
+
+newdf = DataFrame(mydf |> @filter(...) |> @mutate(...) )
+
+```
+
+The Pipe operator `|>` is a syntactical shorthand for prefix notation
+for calling a function with the first argument coming from the left
+hand side of the pipe. So `a |> foo(b,c)` is equivalent to
+`foo(a,b,c)`.
+
+Speaking of syntax, the notation `@foo` denotes a
+["macro"](https://docs.julialang.org/en/v1/manual/metaprogramming/),
+that is a function which receives as its arguments the parsed
+representation of the language tree and which can then modify the
+language itself to generate / expand some syntactic elements into code
+to be run. Generating code is known as "metaprogramming" because
+you're writing programs that write programs. So presumably
+`@filter(_.a == 1)` **generates some code** that iterates through the
+named tuples coming in on the left hand side and throws away those for
+which the value of the field `a` is not equal to 1. Macros are mostly
+useful because they allow you to create specialized sub-languages
+within Julia, a feature not found in most languages other than LISP
+dialects (some people, including myself, consider Julia a LISP
+dialect).
+
+
+
+## Splitting The What and the When
+
+In addition to the "wide form" we also need to undo the combination of
+the year with the variable name.
+
+The stack function creates a dataset in which each variable is stored
+as a
+["symbol"](https://docs.julialang.org/en/v1/manual/metaprogramming/#Symbols-1). You
+can think of a "symbol" as a single structure in memory that
+represents a "name". In computer science this is called an
+["interned string"](https://en.wikipedia.org/wiki/String_interning) a
+kind of Platonic ideal of the string... there can be only one, it's
+immutable, and it can be mapped one to one with a particular location
+in memory. This makes working with symbols very easy when it comes to
+things like checking to see if two symbol variables are the
+same... you can just compare their position in the global "symbol
+table" or something similar. whereas comparing two strings, we must
+compare each character in the string to see if they match.
+
+```julia
+using BenchmarkTools
+
+a = "thequickbrownfoxjumpedoverthelazydog"; b="thequickbrownfoxjumpedoverthelazydog";
+asym = :thequickbrownfoxjumpedoverthelazydog; bsym = :thequickbrownfoxjumpedoverthelazydog;
+
+@btime a === b;
+@btime asym === bsym;
+
+
+``` 
+
+The check `a===b` has to actually check all the characters in the
+string, so long strings will take longer. Whereas the symbol is just
+converted to a kind of marker in the symbol table... To check if two
+variables have the same symbol in them, we can immediately just check
+to see if they point to the same object regardless of how long the
+string associated to the symbol name is.
+
+But a symbol is just an atomic thing, it isn't a string you can get
+the third character of for example. So when we want to split out the
+last 4 characters, we want to work with a string. Hence, we converted
+it, using this bit of code:
+
+`dflong |> @mutate(year = something(tryparse(Int,string(_.variable)[end-3:end]),-1), variable=String(_.variable)) |> @mutate(variable = _.year > 0 ? _.variable[1:end-4] : _.variable)`
+
+
+Let's unparse that a little. We first mutated the table to include the
+year, and changed the "variable" by constructing a String from the
+symbol. Then for rows where year was a positive number, we took all
+but the last 4 characters, otherwise we took the whole string.
+
+Note the conditional
+[ternary operator](https://docs.julialang.org/en/v1/manual/control-flow/). It
+has the form `a ? b : c` and means the same as `if a b else c end`. As
+far as I know this ternary operator comes originally from C.
+
+
+
+# Visualizing Aspects of Population Data
+
+
+There are approximately 4 actively maintained Julia plotting
+libraries:
+
+1. Plots
+2. Gadfly
+3. Vega/VegaLite
+4. Makie
+
+There may be others as well, but these are the best known.
+
+We chose Gadfly in this Tutorial because it offers a "Grammar Of
+Graphics" style of plot specification. This is a good style for use in
+exploring data because it lets you compose different components
+together in a reasonable and understandable way. If you come from a
+place where you know Matlab or Python you may be more comfortable with
+Plots or Makie.
+
+The VegaLite library is part of Queryverse and is also a Grammar Of
+Graphics influenced library, however its graphical specification
+language is based on a specification written in
+[JSON](https://en.wikipedia.org/wiki/JSON) and it's a bit involved to
+learn that whole system. Possibly worth it, but maybe not for a first
+Tutorial.
+
+## Fitting basic models:
+
+We brought in for our first example of model fitting, the GLM
+library. This lets you fit relatively common simple models, and uses a
+formula syntax that is very similar to the one used by the lm or glm
+functions in R. 
+
+
+```julia;exec=false
+using GLM
+
+idgrowth = lm(@formula(stpop ~ (year-2015)+(year-2015)^2,smalldata))
+
+display(coef(idgrowth))
+
+predict(idgrowth,DataFrame(year=[2020,2021]),interval=:prediction)
+
+```
+
+The GLM package stands for "Generalized Linear Models" and fits models
+by essentially the maximum likelihood method. This means it gives
+point estimates, and uses the curvature of the likelihood function to
+estimate the standard errors of the parameters.
+
+Since these tutorials are written by an opinionated Bayesian, you can
+take the confidence intervals spit out by GLM as more or less
+approximately equal to a high probability density interval under a
+broad prior distribution. That's not always very reasonable thing to
+do. In our next tutorial perhaps we will build some explicit Bayesian
+models!
+
