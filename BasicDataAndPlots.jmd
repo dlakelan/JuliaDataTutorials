@@ -107,13 +107,7 @@ a numerical `year` column.
 We notice that the census always put the year pasted on to the end of
 the symbol name (when appropriate). But it's not for every
 symbol. We'll strip off the last 4 characters, and try to convert it
-to an integer using `tryparse`. If `tryparse` fails, it returns
-`nothing` which is a special value meaning nothing... We always want
-an Integer though, so we call `something(...)` which returns the first
-argument that isn't `nothing`, so that when we get nothing, something
-will give us -1 instead which is unambiguously not a real year for
-this dataset. This keeps our column type as Int (and avoids problems
-later).
+to an integer using `tryparse`. 
 
 ```julia
 
@@ -196,12 +190,12 @@ than 10 Million people, and look at how they trended in time, and
 compare to states with less than 2 Million people.
 
 ```julia
-bigstates = unique(pop[pop.value .> 10e6,"STNAME"])
+bigstates = unique(pop[pop.value .> 10e6,:STNAME])
 
 bigdata = DataFrame(pop |> @filter(_.STNAME in bigstates) |> @mutate(stpop=_.value/1e6))
 bigplot = plot(bigdata, x=:year,y=:stpop, Geom.line,color=:STNAME,Geom.point,Guide.title("Population of Large States"))
 
-smallstates = unique(pop[pop.value .< 2e6,"STNAME"])
+smallstates = unique(pop[pop.value .< 2e6,:STNAME])
 
 smalldata = DataFrame(pop |> @filter(_.STNAME in smallstates) |> @mutate(stpop=_.value/1e6))
 
@@ -218,7 +212,7 @@ call it a day.
 
 ```julia
 using GLM
-iddata = smalldata |> @filter(_.STNAME == "Idaho") | DataFrame
+iddata = smalldata |> @filter(_.STNAME == "Idaho") |> DataFrame
 idgrowth = lm(@formula(stpop ~ (year-2015)+(year-2015)^2),iddata)
 
 display(coef(idgrowth))

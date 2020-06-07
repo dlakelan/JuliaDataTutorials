@@ -111,7 +111,7 @@ but it is worth mentioning the
 [CSV.jl](https://juliadata.github.io/CSV.jl/stable/) package, which
 can be used to easily read a CSV file into a DataFrame as follows:
 
-```
+```julia;exec=false
 
 using CSV;
 
@@ -176,7 +176,7 @@ the relation represented by the Query. At the end of the chain of
 operations if we want a DataFrame we need to pipe into the DataFrame
 constructor.
 
-```
+```julia;exec=false
 newdf = mydf |> @filter(...) |> @mutate(...) |> DataFrame
 
 ## or what's the same
@@ -205,15 +205,25 @@ within Julia, a feature not found in most languages other than LISP
 dialects (some people, including myself, consider Julia a LISP
 dialect).
 
-
-
 ## Splitting The What and the When
 
 In addition to the "wide form" we also need to undo the combination of
 the year with the variable name.
 
-The stack function creates a dataset in which each variable is stored
-as a
+When we split out the year we used the `tryparse` function. If it
+can't parse a number, it returns `nothing` which is a special value
+meaning nothing... We always want an Integer though, so we call
+`something(...)` which returns the first argument that isn't
+`nothing`, so that when we get nothing, something will give us -1
+instead which is unambiguously not a real year for this dataset. This
+keeps our column type as Int (and avoids problems later). When I tried
+this without using `something()` to ensure an integer was returned,
+then the ENTIRE table became a special "container" type
+`DataValue{Any}` type. This made it impossible to convert the Symbols
+to Strings.
+
+When we called the `stack` function, it creates a dataset in which
+each variable is stored as a
 ["symbol"](https://docs.julialang.org/en/v1/manual/metaprogramming/#Symbols-1). You
 can think of a "symbol" as a single structure in memory that
 represents a "name". In computer science this is called an
@@ -291,6 +301,14 @@ language is based on a specification written in
 [JSON](https://en.wikipedia.org/wiki/JSON) and it's a bit involved to
 learn that whole system. Possibly worth it, but maybe not for a first
 Tutorial.
+
+The Gadfly function `set_default_plot_size(w,h)` obviously sets the
+default sizes. It takes two arguments, a width and a height, which
+should be expressed as elements of the type `Measures.Length`. The
+variable `cm` is a constant global and the expression `20cm` is really
+the same as `20*cm` since Julia interprets adjacency as
+multiplication. There is also a constant global `inch`.
+
 
 ## Fitting basic models:
 

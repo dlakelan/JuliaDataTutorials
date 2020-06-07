@@ -6,7 +6,7 @@ that you don't have long load times later when you want to use the
 packages. This script could take **quite a long time** and requires
 you to have an internet connection to download the packages.
 
-```julia
+```julia;exec=false
 
 using Pkg;
 Pkg.add("IJulia")
