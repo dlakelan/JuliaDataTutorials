@@ -51,7 +51,7 @@ end
 
 dat2 = dat |> @mutate(thedate=convdate(_.date)) |> DataFrame
 
-allstates = unique(dat.state)
+allstates = unique(dat.state);
 
 ```
 
@@ -64,37 +64,39 @@ function plotstate(df,state)
     dfstate = df |> @filter(_.state == state) |> 
         @mutate(testpct=_.positiveIncrease/(_.totalTestResultsIncrease+.1)) |>
         @select(:thedate,:state,:testpct,:positiveIncrease,:deathIncrease)|>DataFrame
-    
-    testing = dfstate |> @vlplot(width=300,layer=[],title="Testing in $state") +
+
+    testing = @vlplot(width=300,layer=[],title="Testing in $state") +
         @vlplot(:point,x=:thedate,y={:testpct,axis={title="Percentage Positive"}}) + 
         @vlplot(transform=[{loess=:testpct,on=:thedate}],mark=:line,x=:thedate,y=:testpct)
 
-    cases = dfstate |> @vlplot(width=300,layer=[],title="Cases in $state") + 
+    cases = @vlplot(width=300,layer=[],title="Cases in $state") + 
         @vlplot(mark={:point,filled=true},
                 x=:thedate,y={:positiveIncrease,axis={title="Cases Per Day"}})+
     @vlplot(transform=[{loess=:positiveIncrease,on=:thedate,bandwidth=.2}],
             mark=:line,x=:thedate,y=:positiveIncrease)
     
-    deaths = dfstate |> @vlplot(width=300,layer=[],title="Deaths in $state") + 
+    deaths = @vlplot(width=300,layer=[],title="Deaths in $state") + 
         @vlplot(:point,x=:thedate,y=:deathIncrease) + 
         @vlplot(transform=[{loess=:deathIncrease,on=:thedate,bandwidth=.2}],
                 mark=:line,x=:thedate,y={:deathIncrease,axis={title="Deaths Per Day"}})
     
-    return(testing,cases,deaths)
+    return(dfstate |> hcat(testing,cases,deaths))
     
 end
 
 #test output
-plotstate(dat2,"CA")[1]
+#plotstate(dat2,"CA")
 
 ```
 
-Once we get `hcat` working we can put these side by side... meantime, let's view all the states:
+# Plotting All The States:
+
+
 
 ```julia
 
-for i in unique(dat2.state)
-    display.(plotstate(dat2,i))
+for i in allstates
+    display(plotstate(dat2,i))
 end
 
 
