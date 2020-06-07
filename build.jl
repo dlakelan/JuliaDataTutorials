@@ -2,7 +2,7 @@
 
 using Weave
 
-docs = ["0_Prerequisites.jmd",
+docs = [ #"0_Prerequisites.jmd", ## don't build this as it installs packages
         "BasicDataAndPlots.jmd",
         "DiscussionBasicDataAndPlots.jmd"];
 
