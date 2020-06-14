@@ -102,3 +102,173 @@ end
 
 ```
 
+# Mortality Data:
+
+Although the CDC in general doesn't have up to date mortality data
+available, they have made an effort to create a variety of datasets
+for COVID. They're required not to release too-specific
+information. They can only do aggregated groups with more than 10
+people aggregated. Obviously you'd probably like every day every
+county, exactly how many people in each sex and age category
+died... But this kind of data is not allowed as it quickly becomes
+individually identifiable.
+
+The most useful datasets are:
+
+1. COVID-19 [Case Surveillance Public Use Data](https://catalog.data.gov/dataset/covid-19-case-surveillance-public-use-data)
+   1. CSV at: https://data.cdc.gov/api/views/vbim-akqf/rows.csv?accessType=DOWNLOAD
+2. [Provisional Death Counts by Sex,Age,State](https://catalog.data.gov/dataset/provisional-covid-19-death-counts-by-sex-age-and-state-fb69a)
+   1. CSV at: https://data.cdc.gov/api/views/9bhg-hcku/rows.csv?accessType=DOWNLOAD
+3. [By Place of Death and State](https://catalog.data.gov/dataset/provisional-covid-19-death-counts-by-place-of-death-and-state-936c6)
+4. [By Week and State](https://catalog.data.gov/dataset/provisional-covid-19-death-counts-by-week-ending-date-and-state)
+   1. CSV at: https://data.cdc.gov/api/views/r8kw-7aab/rows.csv?accessType=DOWNLOAD
+5. [By Sex Age and Week](https://catalog.data.gov/dataset/provisional-covid-19-death-counts-by-sex-age-and-week)
+   1. CSV at: https://data.cdc.gov/api/views/vsak-wrfu/rows.csv?accessType=DOWNLOAD
+6. [Death counts by county](https://catalog.data.gov/dataset/provisional-covid-19-death-counts-in-the-united-states-by-county)
+   1. CSV at: https://data.cdc.gov/api/views/kn79-hsxy/rows.csv?accessType=DOWNLOAD
+7. [Weekly death counts by state and cause](https://catalog.data.gov/dataset/weekly-counts-of-deaths-by-state-and-select-causes-2019-2020)
+   1. CSV at: https://data.cdc.gov/api/views/muzy-jte6/rows.csv?accessType=DOWNLOAD
+8. 
+
+
+
+```julia
+
+
+using HTTP
+function grabifsmallerolder(url,filename,size,time)
+    s = stat(filename)
+    if(s.size < size || s.mtime < time)
+        io = open(filename,"w")
+        try r = HTTP.get(url,response_stream=io); catch err; 
+            throw(err)
+        finally 
+            close(io)
+        end
+    end
+end
+
+covdeaths = "https://data.cdc.gov/api/views/9bhg-hcku/rows.csv?accessType=DOWNLOAD"
+grabifsmallerolder(covdeaths,"covSexAgeState.csv",1e6,time()-3600*24)
+
+
+
+```
+
+Since the all deaths was a bust, let's look at COVID related dataset:
+
+
+It's useful to ask which age groups are losing the most expected life
+years? To answer this we can use the life expectancy tables provided
+by the CDC. To make this analysis simple, we'll use tables for the
+whole population against the data for both sexes.
+
+
+
+```julia;
+
+covdf = DataFrame(load("covSexAgeState.csv"))
+
+agedict = Dict("Under 1 year" => 0.5, "1-4 years" => 2.5, "5-14 years" => 10.0, "15-24 years" => 20.0,
+               "25-34 years" => 30.0, "35-44 years" => 40.0, 
+               "45-54 years" => 50.0, "55-64 years" => 60.0, "65-74 years" => 70.0 ,
+               "75-84 years" => 80.0, "85 years and over" => 90.0, "All ages"=>nothing, "All Ages" => nothing)
+
+rename!(covdf,[:date,:startwk,:endwk,:state,:sex,:agegrp,:coviddeaths,:totdeaths,:pneumdeaths,:pneumandcovdeaths,:infldeaths,:pnuminfcovdeaths,:footnote])
+
+covdf.agenum  = map(x -> agedict[x],covdf.agegrp)
+
+
+covallagedf = covdf[map(x -> x in ["All ages","All Ages"], covdf.agegrp ),:]
+
+filter!(x -> ! (x in ["All ages","All Ages"]),covdf)
+
+deathsplot = covdf |> @filter(_.state == "United States" && _.sex != "Unknown") |> 
+( @vlplot(layer=[]) + 
+  @vlplot(:point,x={"agenum:q",title="Age"},y= {"coviddeaths:q",scale={domain=[0,40000]}},
+          color="sex:n",width=600,title="Total Coronavirus Deaths By Age") +
+  @vlplot(:line,x="agenum:q",y="coviddeaths:q",color="sex:n"))
+
+lifetable = "https://ftp.cdc.gov/pub/Health_Statistics/NCHS/Publications/NVSR/68_07/Table01.xlsx"
+
+grabifsmallerolder(lifetable,"alllife.xlsx",100,time()+3600*12);
+
+ltd = DataFrame(load("alllife.xlsx","Table 1!A4:G104"))
+rename!(ltd,[:agegrp,:qx,:nsurv,:ndie,:pylived,:pylivedabov,:expect])
+
+ltd.age = 1:100
+
+lyldf = DataFrame(covdf |> @filter(_.sex == "All" && _.agenum != nothing) |> 
+                  @mutate(lyl = _.coviddeaths * ltd[Int(round(_.agenum +.1)),:expect]))
+
+
+
+lylplot = lyldf |>@mutate(ltl=_.lyl/80)|> @vlplot(:bar,x={"agenum:q",title="Age"},y={"ltl:q",title="Nominal Lifetimes Lost"},width=600,
+                                        title="Nominal Lifetimes Lost By Age (1 lifetime = 80 years)")
+display([deathsplot; lylplot]);
+
+
+```
+
+The CDC Through Data.gov has made available a de-identified
+individualized case database of COVID cases:
+
+```julia
+
+covidcases="https://data.cdc.gov/api/views/vbim-akqf/rows.csv?accessType=DOWNLOAD"
+
+grabifsmallerolder(covidcases,"covidcasespub.csv",1000000,time()-3600*24);
+
+covcasedf = DataFrame(load("covidcasespub.csv"))
+
+```
+
+Manipulating data is sometimes easier if you can use a well developed
+language to manipulate it. Fortunately, the SQLite library is an
+excellent tool for manipulating large datasets in a self-contained
+database file, without all the complexity of a database management
+system like Mariadb/MySQL or PostgreSQL. We can access SQLite from
+Julia. It is somewhat slower than in R at the moment, but still fast
+enough for our purposes. Hopefully in the future it will be even
+better.
+
+```julia
+
+using SQLite
+
+db = SQLite.DB("coviddb.db")
+
+SQLite.drop!(db,"CovidCases";ifexists=true);
+SQLite.load!(covcasedf,db,"CovidCases";ifnotexists=true);
+```
+
+Let's grab all deaths by day, aggregated by age group:
+
+```julia
+byagedeaths = DBInterface.execute(db,"select cdc_report_dt,count(*) as N,age_group,death_yn from CovidCases group by cdc_report_dt,age_group,death_yn") |> DataFrame
+
+first(byagedeaths,10)
+
+```
+
+Now a graph that shows 40-50 year old death rates:
+
+
+```julia
+
+function plotdeaths(df,agegroup)
+    df |> @filter(_.age_group == agegroup && _.death_yn == "Yes") |> 
+        @vlplot(layer=[],title="US-wide Deaths per day (age $agegroup)",width=600) + 
+        @vlplot(:point,x=:cdc_report_dt,y={:N,scale={domain=[0,1000]}},) + 
+        @vlplot(:line,x=:cdc_report_dt,y=:N,transform=[{loess=:N, on=:cdc_report_dt,bandwidth=.2}])
+end
+
+
+plot40 = byagedeaths |> x->plotdeaths(x,"40 - 49 Years")
+plot50 = byagedeaths |> x->plotdeaths(x,"50 - 59 Years")
+plot60 = byagedeaths |> x->plotdeaths(x,"60 - 69 Years")
+plot70 = byagedeaths |> x->plotdeaths(x,"70 - 79 Years")
+
+map(display,[plot40,plot50,plot60,plot70]);
+
+```

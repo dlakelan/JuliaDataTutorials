@@ -80,6 +80,11 @@ git-tree-sha1 = "a2a6a5fea4d6f730ec4c18a76d27ec10e8ec1c50"
 uuid = "187b0558-2788-49d3-abe0-74a17ed4e7c9"
 version = "1.0.0"
 
+[[DBInterface]]
+git-tree-sha1 = "baaf19c5be56abb6a7dc13f577378299eef06789"
+uuid = "a10d1c49-ce27-4219-8d33-6db1a4562965"
+version = "2.1.0"
+
 [[DataAPI]]
 git-tree-sha1 = "176e23402d80e7743fc26c19c681bfb11246af32"
 uuid = "9a962f9c-6df0-11e9-0e5d-c546b8b5ee8a"
@@ -539,12 +544,24 @@ version = "0.6.1"
 
 [[Rmath_jll]]
 deps = ["Libdl", "Pkg"]
-git-tree-sha1 = "1660f8fefbf5ab9c67560513131d4e933012fc4b"
+git-tree-sha1 = "d76185aa1f421306dec73c057aa384bad74188f0"
 uuid = "f50d1b31-88e8-58de-be2c-1cc44531875f"
-version = "0.2.2+0"
+version = "0.2.2+1"
 
 [[SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+
+[[SQLite]]
+deps = ["BinaryProvider", "DBInterface", "Dates", "Libdl", "Random", "SQLite_jll", "Serialization", "Tables", "Test", "WeakRefStrings"]
+git-tree-sha1 = "25d88a45ce804e04a13ca00f1d67a35ac0e2ede6"
+uuid = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
+version = "1.0.3"
+
+[[SQLite_jll]]
+deps = ["Libdl", "Pkg"]
+git-tree-sha1 = "25675b6872c3fcbe2034510db3a467405b6dc79e"
+uuid = "76ed43ae-9a5d-5a62-8c75-30186b810ce8"
+version = "3.31.1+0"
 
 [[Serialization]]
 uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
