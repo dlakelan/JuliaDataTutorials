@@ -21,12 +21,38 @@ macro.
 
 ```julia
 using Queryverse
+```
 
+
+```julia
 usdata = "https://covidtracking.com/api/v1/states/daily.csv"
+
+
+uspopurl = "https://www2.census.gov/programs-surveys/popest/datasets/2010-2019/counties/totals/co-est2019-alldata.csv"
+
+statecodesurl ="https://www2.census.gov/geo/docs/reference/state.txt?#"
+
+uspop = load(uspopurl) |> @filter(_.COUNTY == 0) |> @select(:STATE,:STNAME,:POPESTIMATE2019) |> DataFrame
+
+
+statecodes = load(File(format"CSV",statecodesurl), delim='|') |> DataFrame
+
+
 
 dat = DataFrame(load(usdata))
 
+
+dat = join(dat,statecodes, on = :state => :STUSAB,kind=:left)
+
+dat = join(dat,uspop, on = :STATE_NAME => :STNAME, kind=:left, makeunique=true)
+
+
 display(first(dat,5))
+display(first(uspop))
+
+
+display(first(dat,5))
+display(first(uspop))
 
 ```
 
@@ -67,8 +93,9 @@ function plotstate(df,state)
 
     testing = @vlplot(width=300,layer=[],title="Testing in $state") +
         @vlplot(:point,x=:thedate,y={:testpct,axis={title="Percentage Positive"}}) + 
-        @vlplot(transform=[{loess=:testpct,on=:thedate}],mark=:line,x=:thedate,y=:testpct)
-
+        @vlplot(transform=[{loess=:testpct,on=:thedate}],
+                mark=:line,x=:thedate,y=:testpct)
+    
     cases = @vlplot(width=300,layer=[],title="Cases in $state") + 
         @vlplot(mark={:point,filled=true},
                 x=:thedate,y={:positiveIncrease,axis={title="Cases Per Day"}})+
@@ -76,9 +103,9 @@ function plotstate(df,state)
             mark=:line,x=:thedate,y=:positiveIncrease)
     
     deaths = @vlplot(width=300,layer=[],title="Deaths in $state") + 
-        @vlplot(:point,x=:thedate,y=:deathIncrease) + 
+        @vlplot(:point,x=:thedate,y={:deathIncrease,axis={title="Deaths Per Day"}}) + 
         @vlplot(transform=[{loess=:deathIncrease,on=:thedate,bandwidth=.2}],
-                mark=:line,x=:thedate,y={:deathIncrease,axis={title="Deaths Per Day"}})
+                mark=:line,x=:thedate,y=:deathIncrease)
     
     return(dfstate |> hcat(testing,cases,deaths))
     
@@ -101,6 +128,29 @@ end
 
 
 ```
+
+# Hospitalization:
+
+Hospitalization data is reported rather incompletely in the
+covidtracking data. We'll filter out the missing values, and then
+graph states for which it's available. Note that for Queryverse
+@filter we must filter on isna rather than ismissing.
+
+```julia
+
+
+hdat = dat2 |> @filter(! isna(_.hospitalizedCurrently)) |> DataFrame
+display(first(hdat,10))
+
+for i in allstates
+
+    hdat |> @filter(_.state == i) |> @mutate(hosppc = _.hospitalizedCurrently / _.POPESTIMATE2019 * 1e3) |> @vlplot(layer=[]) + @vlplot(:point, x=:thedate, y=:hosppc,title="$i Hospitalization/1000 people") + @vlplot(transform=[{loess=:hosppc,on=:thedate,bandwidth=.2}],mark=:line,x=:thedate,y=:hosppc) |> display
+
+end
+
+```
+
+
 
 # Mortality Data:
 
@@ -139,6 +189,7 @@ using HTTP
 function grabifsmallerolder(url,filename,size,time)
     s = stat(filename)
     if(s.size < size || s.mtime < time)
+        chmod(filename,0o644)
         io = open(filename,"w")
         try r = HTTP.get(url,response_stream=io); catch err; 
             throw(err)
@@ -149,7 +200,7 @@ function grabifsmallerolder(url,filename,size,time)
 end
 
 covdeaths = "https://data.cdc.gov/api/views/9bhg-hcku/rows.csv?accessType=DOWNLOAD"
-grabifsmallerolder(covdeaths,"covSexAgeState.csv",1e6,time()-3600*24)
+grabifsmallerolder(covdeaths,"covSexAgeState.csv",1e6,time()-3600*24);
 
 
 
