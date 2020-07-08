@@ -206,9 +206,6 @@ grabifsmallerolder(covdeaths,"covSexAgeState.csv",1e6,time()-3600*24);
 
 ```
 
-Since the all deaths was a bust, let's look at COVID related dataset:
-
-
 It's useful to ask which age groups are losing the most expected life
 years? To answer this we can use the life expectancy tables provided
 by the CDC. To make this analysis simple, we'll use tables for the
