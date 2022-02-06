@@ -1,0 +1,140 @@
+# Visualizing Spatial Data with GMT
+
+GMT is the "Generic Mapping Tools" a powerful toolset for geospatial visualizations. With great power comes great learning curves.
+The goal here is to make it possible for someone who has a data analysis background but not much specific knowledge of geospatial software to
+make maps that show their data in 2D maps, and simultaneously to learn something about the framework and what it is capable of, and how to
+use it.
+
+# Problem 1: a Choropleth map of US Census Data
+
+One of the most common tasks in basic geospatial data analysis is to create a map in which regions of the world are colored based on
+the value of some statistic pertaining to the region. We will start with a very simple map of population for each county in the US. 
+The data for this can be found from the Census bureau at https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/counties/totals/co-est2020-alldata.csv
+
+```julia
+using CSV,DataFrames,GMT,Printf
+
+countypopurl = "https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/counties/totals/co-est2020-alldata.csv"
+
+download(countypopurl,"data/countypops.csv")
+
+cpopall = CSV.read("data/countypops.csv",DataFrame)
+
+cpop = cpopall[:,[:STATE,:COUNTY,:STNAME,:CTYNAME,:POPESTIMATE2020]]
+
+```
+
+Now we have a large number of different estimates for each county in the US. For simplicity let's use the POPESTIMATE2020 variable. The COUNTY 
+variable is the FIPS county code for the county.
+
+In order to build a Choropleth map, we will need to have a file that defines the spatial boundaries of each county! GMT is a generic mapping tool
+It will read various geospatial data formats which can be used to define the regions to be plotted. The Census bureau has a file which defines
+the boundaries of the counties at 3 different resolutions. These are in "shapefile" format. The files and other related shapefiles are available
+[at the Census website](https://www.census.gov/geographies/mapping-files/time-series/geo/carto-boundary-file.html). We will use the medium
+resolution version of the county shapefiles (5 million meter resolution).
+
+```julia{eval=false}
+countyshapeurl = "https://www2.census.gov/geo/tiger/GENZ2018/shp/cb_2018_us_county_5m.zip"
+
+download(countyshapeurl,"data/cb_2018_us_county_5m.zip")
+cd("data")
+run(`unzip cb_2018_us_county_5m.zip`)
+cd("..")
+
+```
+
+Inside the zip file are a number of files, the one ending in ".shp" is in the shape file format. We can read this using GMT's function
+gmtread
+
+```julia
+counties = gmtread("data/cb_2018_us_county_5m.shp")
+```
+
+Now, what kind of thing is "counties?" 
+
+```julia
+typeof(counties)
+```
+
+It's a Vector{GMTdataset}. Basically GMT treats the shape file as a collection of shapes, each shape gets its own GMTdataset, which is a structure
+
+```{eval=false}
+search: GMTdataset
+
+  No documentation found.
+
+  Summary
+  ≡≡≡≡≡≡≡≡≡
+
+  mutable struct GMTdataset{T<:Real, N}
+
+  Fields
+  ≡≡≡≡≡≡≡≡
+
+  data     :: Array{T<:Real, N}
+  ds_bbox  :: Vector{Float64}
+  bbox     :: Vector{Float64}
+  attrib   :: Dict{String, String}
+  colnames :: Vector{String}
+  text     :: Vector{String}cpop.CFIPS = format("%03d",cpop.COUNTY)
+
+  geom     :: Int64
+
+  Supertype Hierarchy
+  ≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡≡
+
+  GMTdataset{T<:Real, N} <: AbstractArray{T<:Real, N} <: Any
+```
+
+In addition to "data" which is lattitude and longitude values in this case, there are a variety of metadata fields. one of which is "header".
+
+Let's look at the header of the first county:
+```julia
+counties[1].header
+counties[1].attrib
+```
+
+This shows that the header is a comma separated values string. We want to "join" our data to these counties such that the county FIPS identifier 
+is the same. The FIPS identifier is a unique numerical code assigned to each county (the names are not necessarily unique). 
+
+In this case, we have the value 39 being the FIPS code for the state of Ohio, and 071 being the county FIPS code for Highland County.
+
+So we'd like to join field 2 of the header to the COUNTY column of our population data. 
+However our population data represents the COUNTY field as a number, not a 0 padded string. Let's fix that then do the join
+
+
+```julia
+
+cpop.CFIPS = Printf.format.(Ref(Printf.Format("%03d")),cpop.COUNTY)
+cpop.STATEFIPS = Printf.format.(Ref(Printf.Format("%02d")),cpop.STATE)
+
+
+
+dfc = DataFrame(STATE = map(x->x.attrib["STATEFP"],counties),COUNTY=map(x -> x.attrib["COUNTYFP"],counties))
+
+
+joineddata = leftjoin(dfc,cpop,on= [:STATE => :STATEFIPS,:COUNTY=>:CFIPS],makeunique=true)
+
+notmissing = .! ismissing.(joineddata.POPESTIMATE2020)
+
+counties = counties[notmissing] ## ignore missing counties?
+joineddata = joineddata[notmissing,:]
+
+cptval = makecpt(range=(log(1000),log(11e6)),C=:plasma)
+
+#imshow(counties,level=joineddata.POPESTIMATE2020,cmap=cptval,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),proj=:guess,colorbar=true)
+
+```
+
+It doesn't work because of missing values... so let's eliminate those:
+
+```julia
+countiesnom = counties[.! ismissing.(joineddata.POPESTIMATE2020)]
+joineddatanom = joineddata[.! ismissing.(joineddata.POPESTIMATE2020),:]
+
+
+
+imshow(countiesnom,level=log.(1 .+ Vector{Int64}(joineddatanom.POPESTIMATE2020)),cmap=cptval,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),
+    proj=:guess,colorbar=true)
+```
+
