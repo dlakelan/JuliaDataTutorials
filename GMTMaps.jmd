@@ -12,7 +12,7 @@ the value of some statistic pertaining to the region. We will start with a very 
 The data for this can be found from the Census bureau at https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/counties/totals/co-est2020-alldata.csv
 
 ```julia
-using CSV,DataFrames,GMT,Printf
+using CSV,DataFrames,GMT,Printf,DataFramesMeta
 
 countypopurl = "https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/counties/totals/co-est2020-alldata.csv"
 
@@ -110,17 +110,20 @@ cpop.STATEFIPS = Printf.format.(Ref(Printf.Format("%02d")),cpop.STATE)
 
 
 
-dfc = DataFrame(STATE = map(x->x.attrib["STATEFP"],counties),COUNTY=map(x -> x.attrib["COUNTYFP"],counties))
+dfc = DataFrame(STATE = map(x->x.attrib["STATEFP"],counties),COUNTY=map(x -> x.attrib["COUNTYFP"],counties),ORDER=1:length(counties))
 
 
-joineddata = leftjoin(dfc,cpop,on= [:STATE => :STATEFIPS,:COUNTY=>:CFIPS],makeunique=true)
+joineddata = @chain leftjoin(dfc,cpop,on= [:STATE => :STATEFIPS,:COUNTY=>:CFIPS],makeunique=true) begin
+@orderby(:ORDER)
+end
+
 
 notmissing = .! ismissing.(joineddata.POPESTIMATE2020)
 
 counties = counties[notmissing] ## ignore missing counties?
 joineddata = joineddata[notmissing,:]
 
-cptval = makecpt(range=(log(1000),log(11e6)),C=:plasma)
+cptvallog = makecpt(range=(log(1000),log(11e6)),C=:plasma)
 
 #imshow(counties,level=joineddata.POPESTIMATE2020,cmap=cptval,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),proj=:guess,colorbar=true)
 
@@ -134,7 +137,15 @@ joineddatanom = joineddata[.! ismissing.(joineddata.POPESTIMATE2020),:]
 
 
 
-imshow(countiesnom,level=log.(1 .+ Vector{Int64}(joineddatanom.POPESTIMATE2020)),cmap=cptval,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),
+imshow(countiesnom,level=log.(1 .+ Vector{Int64}(joineddatanom.POPESTIMATE2020)),cmap=cptvallog,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),
     proj=:guess,colorbar=true)
 ```
+Let's see what it looks like if we don't take the logarithm...
 
+
+```julia
+cptval = makecpt(range=(0,11_000_000),C=:plasma)
+
+imshow(countiesnom,level=Vector{Int64}(joineddatanom.POPESTIMATE2020),cmap=cptval,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),
+    proj=:guess,colorbar=true)
+```
