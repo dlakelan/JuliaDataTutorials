@@ -117,35 +117,95 @@ joineddata = @chain leftjoin(dfc,cpop,on= [:STATE => :STATEFIPS,:COUNTY=>:CFIPS]
 @orderby(:ORDER)
 end
 
-
-notmissing = .! ismissing.(joineddata.POPESTIMATE2020)
-
-counties = counties[notmissing] ## ignore missing counties?
-joineddata = joineddata[notmissing,:]
-
 cptvallog = makecpt(range=(log(1000),log(11e6)),C=:plasma)
 
 #imshow(counties,level=joineddata.POPESTIMATE2020,cmap=cptval,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),proj=:guess,colorbar=true)
 
 ```
 
-It doesn't work because of missing values... so let's eliminate those:
+There are missing values of POPESTIMATE2020 so let's replace them with NaN so we at least still get the polygon drawn. GMT will draw NaN 
+as a special color.
 
 ```julia
-countiesnom = counties[.! ismissing.(joineddata.POPESTIMATE2020)]
-joineddatanom = joineddata[.! ismissing.(joineddata.POPESTIMATE2020),:]
+joineddata.POPESTIMATE2020 = replace(joineddata.POPESTIMATE2020,missing => NaN)
 
 
 
-imshow(countiesnom,level=log.(1 .+ Vector{Int64}(joineddatanom.POPESTIMATE2020)),cmap=cptvallog,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),
-    proj=:guess,colorbar=true)
+GMT.plot(counties,level=log.(1.0 .+ joineddata.POPESTIMATE2020),cmap=cptvallog,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),
+    proj=:guess,colorbar=true,figname="choroplethlog.png",title="Continental US County log(Population)")
 ```
+![Choropleth of log(population) at county level](choroplethlog.png)
+
+
 Let's see what it looks like if we don't take the logarithm...
 
 
 ```julia
 cptval = makecpt(range=(0,11_000_000),C=:plasma)
 
-imshow(countiesnom,level=Vector{Int64}(joineddatanom.POPESTIMATE2020),cmap=cptval,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),
-    proj=:guess,colorbar=true)
+GMT.plot(counties,level=joineddata.POPESTIMATE2020,cmap=cptval,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),
+    proj=:guess,colorbar=true,figname="choroplethnolog.png",title="Continental US County Population")
 ```
+
+![Continental Population](choroplethnolog.png)
+
+It may be interesting to work further with the polygons that represent the counties in some additional ways. For example we could calculate the population
+Density by dividing the population by the area of the polygon. We can calculate the area using the function gmtspatial.
+
+```julia
+
+measures = gmtspatial(counties, area="k")[1] # to get area in km^2
+print(typeof(measures))
+length(measures)
+print(measures)
+denscpt = makecpt(range=(0,11e6/(100*100)),C=:plasma)
+joineddata.area = measures.data[:,3]
+joineddata.density = joineddata.POPESTIMATE2020 ./ joineddata.area
+
+
+
+GMT.plot(counties,level=joineddata.density,cmap=denscpt,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),
+    proj=:guess,colorbar=true,figname="choroplethdens.png",title="Continental US County Pop Density (1/km^2)")
+
+```
+
+![Continental US Density](choroplethdens.png)
+
+
+## Smallest Area Containing ~50% of the population
+
+Our approach to this question will be to sort the counties by density in decreasing order, cumsum the populations... and then create an indicator 
+variable for whether the cumsum is less than 50% of the total, then plot this indicator variable.
+
+```julia
+
+totpop = sum(skipmissing(replace(joineddata.POPESTIMATE2020,NaN=>missing)))
+print(totpop)
+
+smallestareads = @chain joineddata begin
+@orderby(-:density)
+@transform( :csum = cumsum(:POPESTIMATE2020))
+@transform( :inset = :csum .< totpop/2.0,:in80set = :csum .< 0.8 * totpop)
+@orderby(:ORDER)
+end
+
+insetcmap = makecpt(range(0,1),C=:plasma)
+
+GMT.plot(counties,level=Int32.(smallestareads.inset),cmap=insetcmap,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),
+    proj=:guess,colorbar=true,figname="choroplethhpdset.png",title="Continental US smallest 50% set ")
+
+```
+
+![high probability density set 50%](choroplethhpdset.png)
+
+
+## 80%tile smallest area
+
+```julia
+GMT.plot(counties,level=Int32.(smallestareads.in80set),cmap=insetcmap,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),
+    proj=:guess,colorbar=true,figname="choroplethhpd80set.png",title="Continental US smallest 80% set ")
+
+```
+
+![high probability density set 50%](choroplethhpd80set.png)
+

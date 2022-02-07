@@ -20,7 +20,7 @@ this time with the
 macro.
 
 ```julia
-using Queryverse
+using Queryverse, CSVFiles
 ```
 
 
@@ -217,9 +217,9 @@ whole population against the data for both sexes.
 
 covdf = DataFrame(load("covSexAgeState.csv"))
 
-agedict = Dict("Under 1 year" => 0.5, "1-4 years" => 2.5, "5-14 years" => 10.0, "15-24 years" => 20.0,
-               "25-34 years" => 30.0, "35-44 years" => 40.0, 
-               "45-54 years" => 50.0, "55-64 years" => 60.0, "65-74 years" => 70.0 ,
+agedict = Dict("Under 1 year" => 0.5, "1-4 years" => 2.5, "5-14 years" => 10.0, "15-24 years" => 20.0, "0-17 years" => 17.0/2, "18-29 years" => (18+28)/2.0,
+               "25-34 years" => 30.0, "30-49 years" => (30+49)/2.0, "35-44 years" => 40.0, 
+               "45-54 years" => 50.0, "50-64 years" => (50+64)/2.0, "55-64 years" => 60.0, "65-74 years" => 70.0 ,
                "75-84 years" => 80.0, "85 years and over" => 90.0, "All ages"=>nothing, "All Ages" => nothing)
 
 rename!(covdf,[:date,:startwk,:endwk,:state,:sex,:agegrp,:coviddeaths,:totdeaths,:pneumdeaths,:pneumandcovdeaths,:infldeaths,:pnuminfcovdeaths,:footnote])
@@ -233,7 +233,7 @@ filter!(x -> ! (x in ["All ages","All Ages"]),covdf)
 
 deathsplot = covdf |> @filter(_.state == "United States" && _.sex != "Unknown") |> 
 ( @vlplot(layer=[]) + 
-  @vlplot(:point,x={"agenum:q",title="Age"},y= {"coviddeaths:q",scale={domain=[0,40000]}},
+  @vlplot(:point,x={"agenum:q",title="Age"},y= {"coviddeaths:q",scale={domain=[0,100000]}},
           color="sex:n",width=600,title="Total Coronavirus Deaths By Age") +
   @vlplot(:line,x="agenum:q",y="coviddeaths:q",color="sex:n"))
 
