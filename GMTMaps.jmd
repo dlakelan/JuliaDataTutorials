@@ -105,15 +105,15 @@ However our population data represents the COUNTY field as a number, not a 0 pad
 
 ```julia
 
-cpop.CFIPS = Printf.format.(Ref(Printf.Format("%03d")),cpop.COUNTY)
-cpop.STATEFIPS = Printf.format.(Ref(Printf.Format("%02d")),cpop.STATE)
+cpop.COUNTY = Printf.format.(Ref(Printf.Format("%03d")),cpop.COUNTY)
+cpop.STATE = Printf.format.(Ref(Printf.Format("%02d")),cpop.STATE)
 
-
+cpop = cpop[cpop.COUNTY != "000",:] ## eliminate county "000" which is "the whole state" for each state
 
 dfc = DataFrame(STATE = map(x->x.attrib["STATEFP"],counties),COUNTY=map(x -> x.attrib["COUNTYFP"],counties),ORDER=1:length(counties))
 
 
-joineddata = @chain leftjoin(dfc,cpop,on= [:STATE => :STATEFIPS,:COUNTY=>:CFIPS],makeunique=true) begin
+joineddata = @chain leftjoin(dfc,cpop,on= [:STATE,:COUNTY],makeunique=true) begin
 @orderby(:ORDER)
 end
 
@@ -158,13 +158,40 @@ measures = gmtspatial(counties, area="k")[1] # to get area in km^2
 print(typeof(measures))
 length(measures)
 print(measures)
+```
+
+But some counties will consiste of several polygons, like some along the coast may include some islands, etc, to get the total area, we 
+need to group by county identifier, and sum all the areas.
+
+```julia
+countyareas = @chain dfc begin
+  @transform(:area = measures[:,3])
+  groupby([:STATE,:COUNTY])
+  @combine(:totarea = sum(:area))
+  @select(:STATE,:COUNTY,:totarea)
+end
+
+
+cpop = @chain leftjoin(cpop,countyareas,on = [:STATE, :COUNTY]) begin
+  @transform(:density = :POPESTIMATE2020 ./ :totarea)
+  @orderby(:STATE,:COUNTY)
+end
+
+print(cpop[1:10,:])
+
+joineddata = @chain leftjoin(dfc,cpop,on = [:STATE,:COUNTY]) begin 
+  @orderby(:ORDER)
+end
+
+
+
+```
+
+```julia
 denscpt = makecpt(range=(0,11e6/(100*100)),C=:plasma)
-joineddata.area = measures.data[:,3]
-joineddata.density = joineddata.POPESTIMATE2020 ./ joineddata.area
 
 
-
-GMT.plot(counties,level=joineddata.density,cmap=denscpt,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),
+GMT.plot(counties,level=Vector{Float64}(replace(joineddata.density,missing=>NaN)),cmap=denscpt,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),
     proj=:guess,colorbar=true,figname="choroplethdens.png",title="Continental US County Pop Density (1/km^2)")
 
 ```
@@ -179,19 +206,23 @@ variable for whether the cumsum is less than 50% of the total, then plot this in
 
 ```julia
 
-totpop = sum(skipmissing(replace(joineddata.POPESTIMATE2020,NaN=>missing)))
+totpop = sum(cpop[cpop.COUNTY .!= "000",:POPESTIMATE2020]) ## ignore county 0, that's the "whole state"
 print(totpop)
 
-smallestareads = @chain joineddata begin
+areads = @chain cpop begin
+@subset(:COUNTY .!= "000")
 @orderby(-:density)
 @transform( :csum = cumsum(:POPESTIMATE2020))
 @transform( :inset = :csum .< totpop/2.0,:in80set = :csum .< 0.8 * totpop)
-@orderby(:ORDER)
+end
+
+joineddata = @chain leftjoin(dfc,areads,on=[:STATE,:COUNTY]) begin
+  @orderby(:ORDER)
 end
 
 insetcmap = makecpt(range(0,1),C=:plasma)
 
-GMT.plot(counties,level=Int32.(smallestareads.inset),cmap=insetcmap,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),
+GMT.plot(counties,level=Float64.(replace(joineddata.inset,missing => NaN)),cmap=insetcmap,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),
     proj=:guess,colorbar=true,figname="choroplethhpdset.png",title="Continental US smallest 50% set ")
 
 ```
@@ -202,10 +233,12 @@ GMT.plot(counties,level=Int32.(smallestareads.inset),cmap=insetcmap,close=true,f
 ## 80%tile smallest area
 
 ```julia
-GMT.plot(counties,level=Int32.(smallestareads.in80set),cmap=insetcmap,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),
+GMT.plot(counties,level=Float64.(replace(joineddata.in80set,missing => NaN)),cmap=insetcmap,close=true,fill="+z",pen=0.25,region=(-125,-65,24,50),
     proj=:guess,colorbar=true,figname="choroplethhpd80set.png",title="Continental US smallest 80% set ")
 
 ```
 
 ![high probability density set 50%](choroplethhpd80set.png)
+
+
 
