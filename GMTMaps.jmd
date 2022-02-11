@@ -108,7 +108,7 @@ However our population data represents the COUNTY field as a number, not a 0 pad
 cpop.COUNTY = Printf.format.(Ref(Printf.Format("%03d")),cpop.COUNTY)
 cpop.STATE = Printf.format.(Ref(Printf.Format("%02d")),cpop.STATE)
 
-cpop = cpop[cpop.COUNTY != "000",:] ## eliminate county "000" which is "the whole state" for each state
+cpop = cpop[cpop.COUNTY .!= "000",:] ## eliminate county "000" which is "the whole state" for each state
 
 dfc = DataFrame(STATE = map(x->x.attrib["STATEFP"],counties),COUNTY=map(x -> x.attrib["COUNTYFP"],counties),ORDER=1:length(counties))
 
