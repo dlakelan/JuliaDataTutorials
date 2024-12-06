@@ -12,11 +12,11 @@ the value of some statistic pertaining to the region. We will start with a very 
 The data for this can be found from the Census bureau at https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/counties/totals/co-est2020-alldata.csv
 
 ```julia
-using CSV,DataFrames,GMT,Printf,DataFramesMeta
+using CSV,DataFrames,GMT,Printf,DataFramesMeta,Downloads
 
 countypopurl = "https://www2.census.gov/programs-surveys/popest/datasets/2010-2020/counties/totals/co-est2020-alldata.csv"
 
-download(countypopurl,"data/countypops.csv")
+Downloads.download(countypopurl,"data/countypops.csv")
 
 cpopall = CSV.read("data/countypops.csv",DataFrame)
 
